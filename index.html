@@ -239,6 +239,15 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwMml1-KSkJKfANq7rLsaeB
 
 (function(){
 "use strict";
+
+// Bộ đón lỗi tự động giúp chống màn hình trắng
+window.addEventListener('error', function(e) {
+  const app = document.getElementById('app');
+  if (app && !app.innerHTML.trim()) {
+    app.innerHTML = '<div style="max-width:600px;margin:30px auto;padding:20px;background:#fff;border-radius:14px;border:1px solid #ffcdd2;color:#c62828;font-family:sans-serif"><h3>Đã xảy ra lỗi khởi chạy giao diện:</h3><p><b>Chi tiết:</b> ' + (e.message || e.error) + '</p><p style="color:#555;font-size:13px">Vui lòng bấm F12 mở tab Console để xem thêm.</p></div>';
+  }
+});
+
 const IS_DEMO = !API_URL;
 const $ = (s, r=document) => r.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -246,6 +255,7 @@ const store = { get: k => { try { return localStorage.getItem(k); } catch(e){ re
 
 const TYPES = { move:['Di chuyển','t-move'], food:['Ăn uống','t-food'], cafe:['Cà phê','t-cafe'], sight:['Tham quan','t-sight'], hotel:['Nghỉ ngơi','t-hotel'], activity:['Hoạt động','t-act'], free:['Tự do','t-free'] };
 const typeOf = t => TYPES[t] || TYPES.activity;
+const chip = t => { const [n, c] = typeOf(t); return `<span class="chip ${c}">${n}</span>`; };
 const DOW = ['CN','T2','T3','T4','T5','T6','T7'];
 const EXP_CATS = ['Ăn uống','Di chuyển','Lưu trú','Vé tham quan','Mua sắm','Khác'];
 const CURS = ['VND','USD','EUR','JPY','KRW','THB','SGD','CNY','HKD','TWD','MYR','AUD','GBP'];
@@ -288,7 +298,8 @@ async function apiPost(body) {
 
 function flat(trip) {
   const out = [];
-  (trip.days||[]).forEach((d, di) => (d.items||[]).forEach((it, ii) => {
+  if (!trip || !trip.days) return out;
+  trip.days.forEach((d, di) => (d.items||[]).forEach((it, ii) => {
     const s = toKey(d.date, it.start);
     let e = it.end ? toKey(d.date, it.end) : null;
     if (e !== null && e <= s) e += 1440;
@@ -315,7 +326,8 @@ function situation() {
 const itemById = id => { if (!S.trip) return null; for (const d of S.trip.days) for (const it of d.items) if (it.id === id) return Object.assign({ date: d.date }, it); return null; };
 const notesFor = id => S.notes.filter(n => n.itemId === id).sort((a,b) => a.ts - b.ts);
 function withIds(trip) {
-  trip.days.forEach(d => d.items.forEach((it, i) => {
+  if (!trip || !trip.days) return trip;
+  trip.days.forEach(d => (d.items || []).forEach((it, i) => {
     if (!it.id) it.id = d.date.replace(/-/g,'') + '-' + it.start.replace(':','') + '-' + i;
   }));
   return trip;
@@ -340,6 +352,7 @@ function locate() {
   });
 }
 function planLoc(sit) {
+  if (!sit || !sit.items) return null;
   const a = sit.cur || sit.next[0] || sit.past[0] || sit.items[0];
   return a && a.lat != null && a.lng != null ? { lat: +a.lat, lng: +a.lng, src: 'plan', name: a.place || a.title } : null;
 }
@@ -434,7 +447,7 @@ function wxIcon(c) {
   return `<svg viewBox="0 0 48 48" aria-hidden="true">${g}</svg>`;
 }
 
-/* ==================== QUANH ĐÂY 2KM (CÓ TAB ẢNH ĐẸP) ==================== */
+/* ==================== QUANH ĐÂY 2KM ==================== */
 async function loadNearby(forceAI) {
   if (!S.loc) return;
   const k = S.loc.lat.toFixed(3) + ',' + S.loc.lng.toFixed(3);
@@ -687,6 +700,7 @@ function viewUpload() {
 }
 
 function viewLive() {
+  if (!S.trip) return viewWelcome();
   const sit = situation(), t = S.trip;
   const right = `${!IS_DEMO?`<button class="btn sm" data-act="share">Chia sẻ</button>`:''}${whoBtn()}`;
   return `${topBar(t.name, 'Hành Trang · ' + esc(t.destination||''), right)}
@@ -929,6 +943,13 @@ async function act(a) {
     case 'share': navigator.clipboard.writeText(location.href); toast('Đã chép link chuyến đi!'); break;
     case 'name': S.askName = true; render(); break;
     case 'saveName': { const v = ($('#nameInput').value||'').trim(); if (v) { S.name = v; store.set('ht-name', v); S.askName = false; render(); } break; }
+    case 'join': {
+      const v = ($('#joinCode') && $('#joinCode').value || '').trim();
+      const m = v.match(/trip=([\w-]+)/);
+      const id = m ? m[1] : v.replace(/[^\w-]/g, '');
+      if (id) location.search = '?trip=' + encodeURIComponent(id);
+      break;
+    }
     case 'closeSheet': S.sheet = null; render(); break;
     case 'closeExp': S.expForm = null; render(); break;
     case 'realtime': S.simKey = null; softRender(); break;
@@ -1000,14 +1021,45 @@ async function act(a) {
 async function boot() {
   const id = new URLSearchParams(location.search).get('trip');
   if (IS_DEMO) {
-    S.trip = withIds({ id: 'demo', name: 'Đà Nẵng – Hội An 3N2Đ', destination: 'Đà Nẵng · Hội An', timezone: 'Asia/Ho_Chi_Minh', days: [
-      { date: wallParts(new Date(),'Asia/Ho_Chi_Minh').date, title: 'Ngày 1: Biển Mỹ Khê', items: [
-        { start:'07:30', end:'08:45', type:'move', title:'Bay Hà Nội → Đà Nẵng', place:'Sân bay Đà Nẵng', lat:16.0439, lng:108.1994 },
-        { start:'10:30', end:'12:00', type:'sight', title:'Dạo chợ Hàn', place:'Chợ Hàn', lat:16.0682, lng:108.2241 },
-        { start:'15:30', end:'18:00', type:'activity', title:'Tắm biển Mỹ Khê', place:'Biển Mỹ Khê', lat:16.0544, lng:108.2478 }
-      ]}
-    ]});
-    S.screen = 'live'; render();
+    const today = wallParts(new Date(),'Asia/Ho_Chi_Minh').date;
+    S.trip = withIds({
+      id: 'demo',
+      name: 'Đà Nẵng – Hội An 3N2Đ',
+      destination: 'Đà Nẵng · Hội An',
+      timezone: 'Asia/Ho_Chi_Minh',
+      tips: [
+        { text: 'Mang áo mưa mỏng và kem chống nắng khi đi biển/núi', src: 'ai' },
+        { text: 'Chuẩn bị tiền mặt mệnh giá nhỏ khi dạo chợ và phố cổ', src: 'ai' }
+      ],
+      days: [
+        {
+          date: today,
+          title: 'Ngày 1: Đến Đà Nẵng · Biển Mỹ Khê',
+          items: [
+            { start:'07:30', end:'08:45', type:'move', title:'Bay Hà Nội → Đà Nẵng', place:'Sân bay Đà Nẵng', lat:16.0439, lng:108.1994, notes:[{text:'Có mặt sân bay trước 6:00',src:'goc'}] },
+            { start:'10:30', end:'12:00', type:'sight', title:'Dạo chợ Hàn', place:'Chợ Hàn', lat:16.0682, lng:108.2241, notes:[{text:'Tầng 2 bán vải may áo dài lấy ngay',src:'ai'}] },
+            { start:'12:30', end:'13:30', type:'food', title:'Ăn trưa Mì Quảng', place:'Mì Quảng Bà Mua', lat:16.0640, lng:108.2190, notes:[] },
+            { start:'15:30', end:'18:00', type:'activity', title:'Tắm biển Mỹ Khê', place:'Biển Mỹ Khê', lat:16.0544, lng:108.2478, notes:[{text:'Tắm trong khu vực có cờ cứu hộ',src:'ai'}] },
+            { start:'19:00', end:'20:30', type:'food', title:'Hải sản Bé Mặn', place:'Võ Nguyên Giáp', lat:16.0617, lng:108.2470, notes:[] }
+          ]
+        },
+        {
+          date: addDays(today, 1),
+          title: 'Ngày 2: Bà Nà Hills · Cầu Vàng',
+          items: [
+            { start:'07:30', end:'08:30', type:'move', title:'Xe đón đi Bà Nà', place:'Khách sạn', lat:16.0600, lng:108.2460, notes:[{text:'Trên núi lạnh hơn phố 6 độ, mang áo khoác',src:'ai'}] },
+            { start:'08:30', end:'15:30', type:'sight', title:'Bà Nà Hills · Cầu Vàng', place:'Bà Nà Hills', lat:15.9950, lng:107.9960, notes:[] },
+            { start:'18:30', end:'21:00', type:'sight', title:'Cầu Rồng phun lửa', place:'Cầu Rồng', lat:16.0612, lng:108.2272, notes:[{text:'Phun lửa lúc 21:00 thứ 7 & CN',src:'goc'}] }
+          ]
+        }
+      ]
+    });
+    S.notes = [
+      { id: 'n1', itemId: 'demo-item-1', itemTitle: 'Dạo chợ Hàn', author: 'Lan', text: 'Tầng 2 chợ Hàn mua quà nhớ trả giá chút nha', ts: Date.now() - 3600000 },
+      { id: 'n2', itemId: 'chung', itemTitle: 'Cả chuyến', author: 'Minh', text: 'Mình mang theo 2 sạc dự phòng loại 20.000mAh nhé', ts: Date.now() - 7200000 }
+    ];
+    S.screen = 'live';
+    render();
     initLocationAndContext();
     return;
   }
@@ -1033,6 +1085,7 @@ async function initLocationAndContext() {
 boot();
 setInterval(() => { if (S.screen === 'live') softRender(); }, 1000);
 setInterval(() => { if (S.screen === 'live') loadWeather(); }, 30 * 60000);
+})();
 </script>
 </body>
 </html>
