@@ -235,7 +235,7 @@ a { color:var(--sea); }
 /* =========================================================
    CẤU HÌNH: Dán Web App URL của Google Apps Script vào đây.
    ========================================================= */
-const API_URL = '';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxYRDmPpw3SOC2I2i8RtudIv4ccRXUTq2vQvN7ywYAiZAy3kY8jR4rAHok6rezNW_BJ/exec';
 
 (function(){
 "use strict";
@@ -281,7 +281,7 @@ const S = {
   name: store.get('ht-name') || '', askName: false, simKey: null, dayIdx: null,
   sheet: null, loc: null, wx: null, spotlight: null, near: null, nearState: 'idle', nearTab: 'photo', nearKey: '',
   noteTarget: 'auto', drafts: {}, expenses: [], expSheetUrl: '', expForm: null,
-  photoUpload: null, // Quản lý modal xem trước & đăng ảnh
+  photoUpload: null,
   files: [], draft: '', parse: { state: 'idle', msg: '', result: null }, updating: false, err: '', toast: ''
 };
 const editKey = () => S.tripId ? store.get('ht-edit-' + S.tripId) : null;
@@ -964,11 +964,10 @@ function bind() {
   on('file', 'change', e => S.files = [...e.target.files]);
   on('photoNoteInput', 'input', e => { if (S.photoUpload) S.photoUpload.note = e.target.value; });
 
-  // Bắt sự kiện chọn ảnh cho Kho ảnh (Camera hoặc Thư viện)
   on('albumCam', 'change', e => {
     if (e.target.files && e.target.files[0]) {
       startPhotoUpload(e.target.files[0]);
-      e.target.value = ''; // Reset để có thể chụp tiếp
+      e.target.value = '';
     }
   });
   on('albumPick', 'change', e => {
