@@ -235,16 +235,15 @@ a { color:var(--sea); }
 /* =========================================================
    CẤU HÌNH: Dán Web App URL của Google Apps Script vào đây.
    ========================================================= */
-const API_URL = 'https://script.google.com/macros/s/AKfycbzqe9aHtuOtPQvfmbogB9YQzYOhCIBdvuUsef5JuW8VRYGwQhu02R_v3q4qnu9okH0_/exec';
+const API_URL = '';
 
 (function(){
 "use strict";
 
-// Bộ đón lỗi tự động giúp chống màn hình trắng
 window.addEventListener('error', function(e) {
   const app = document.getElementById('app');
   if (app && !app.innerHTML.trim()) {
-    app.innerHTML = '<div style="max-width:600px;margin:30px auto;padding:20px;background:#fff;border-radius:14px;border:1px solid #ffcdd2;color:#c62828;font-family:sans-serif"><h3>Đã xảy ra lỗi khởi chạy giao diện:</h3><p><b>Chi tiết:</b> ' + (e.message || e.error) + '</p><p style="color:#555;font-size:13px">Vui lòng bấm F12 mở tab Console để xem thêm.</p></div>';
+    app.innerHTML = '<div style="max-width:600px;margin:30px auto;padding:20px;background:#fff;border-radius:14px;border:1px solid #ffcdd2;color:#c62828;font-family:sans-serif"><h3>Đã xảy ra lỗi khởi chạy giao diện:</h3><p><b>Chi tiết:</b> ' + (e.message || e.error) + '</p></div>';
   }
 });
 
@@ -282,6 +281,7 @@ const S = {
   name: store.get('ht-name') || '', askName: false, simKey: null, dayIdx: null,
   sheet: null, loc: null, wx: null, spotlight: null, near: null, nearState: 'idle', nearTab: 'photo', nearKey: '',
   noteTarget: 'auto', drafts: {}, expenses: [], expSheetUrl: '', expForm: null,
+  photoUpload: null, // Quản lý modal xem trước & đăng ảnh
   files: [], draft: '', parse: { state: 'idle', msg: '', result: null }, updating: false, err: '', toast: ''
 };
 const editKey = () => S.tripId ? store.get('ht-edit-' + S.tripId) : null;
@@ -661,7 +661,7 @@ function render() {
   else if (S.screen === 'upload') h = viewUpload();
   else h = viewLive();
 
-  app.innerHTML = `<div class="wrap">${h}</div>${S.screen==='live'?navBar():''}${S.sheet&&S.screen==='live'?sheetView():''}${S.expForm&&S.screen==='live'?expFormView():''}${S.askName?nameSheet():''}<div class="toast" id="toast" role="status" ${S.toast?'':'hidden'}>${esc(S.toast)}</div>`;
+  app.innerHTML = `<div class="wrap">${h}</div>${S.screen==='live'?navBar():''}${S.sheet&&S.screen==='live'?sheetView():''}${S.expForm&&S.screen==='live'?expFormView():''}${S.photoUpload&&S.screen==='live'?photoUploadView():''}${S.askName?nameSheet():''}<div class="toast" id="toast" role="status" ${S.toast?'':'hidden'}>${esc(S.toast)}</div>`;
   bind();
   updateDynamicBackground();
 }
@@ -726,11 +726,11 @@ function hero(sit) {
   if (c) {
     const p = Math.min(100, Math.max(0, (sit.n - c.s)/(c.e - c.s)*100));
     body = `<span class="label">Đang diễn ra</span><h2>${esc(c.title)}</h2><div class="place">${chip(c.type)}${esc(c.place)}</div>
-    <div class="bar"><i style="width:${p.toFixed(1)}%"></i></div>
+    <div class="bar"><i id="heroBar" style="width:${p.toFixed(1)}%"></i></div>
     <div class="barmeta mono"><span>${c.start}</span><span>còn ${dur(c.e - sit.n)}</span><span>${c.end||fromKey(c.e).time}</span></div>
     <div><button class="btn sm" data-open="${esc(c.id)}">Ghi chú của đoàn (${notesFor(c.id).length})</button></div>`;
   } else if (nx) {
-    body = `<span class="label">Hoạt động tiếp theo</span><div class="cd">${cdUnits(nx.s - sit.n)}</div><h2>${esc(nx.title)}</h2><div class="place">${chip(nx.type)}${esc(nx.place)} · lúc <span class="mono">${nx.start}</span></div><div><button class="btn sm" data-open="${esc(nx.id)}">Xem chi tiết</button></div>`;
+    body = `<span class="label">Hoạt động tiếp theo</span><div class="cd" id="cd">${cdUnits(nx.s - sit.n)}</div><h2>${esc(nx.title)}</h2><div class="place">${chip(nx.type)}${esc(nx.place)} · lúc <span class="mono">${nx.start}</span></div><div><button class="btn sm" data-open="${esc(nx.id)}">Xem chi tiết</button></div>`;
   } else {
     body = `<span class="label">Kết thúc</span><h2>Chuyến đi đã khép lại</h2>`;
   }
@@ -857,9 +857,9 @@ function albumPanel() {
     <header><h3>Kho ảnh kỷ niệm & khoảnh khắc</h3><span class="sub">${ph.length} bức ảnh</span></header>
     <div class="row" style="margin-bottom:10px">
       <label class="btn now sm" for="albumCam" style="display:inline-flex;align-items:center;cursor:pointer">📸 Chụp ảnh có Note</label>
-      <input id="albumCam" type="file" accept="image/*" capture="environment" hidden>
+      <input id="albumCam" type="file" accept="image/*" capture="environment" style="display:none">
       <label class="btn sm" for="albumPick" style="display:inline-flex;align-items:center;cursor:pointer">Tải ảnh từ máy</label>
-      <input id="albumPick" type="file" accept="image/*" multiple hidden>
+      <input id="albumPick" type="file" accept="image/*" multiple style="display:none">
     </div>
     ${ph.length ? `<div class="album-grid">${ph.map(p => `
       <div class="photo-card">
@@ -883,6 +883,40 @@ function tipsPanel(sit) {
       ${tips.map(t => `<li class="ai">${esc(t.text || t)}</li>`).join('') || '<div class="empty">Chưa có lưu ý nào. Bấm nút phía trên để Sen gợi ý cẩm nang nhé!</div>'}
     </ul>
   </section>`;
+}
+
+function photoUploadView() {
+  const pu = S.photoUpload;
+  if (!pu) return '';
+  const busy = pu.state === 'uploading';
+  return `<div class="scrim" data-act="closePhotoUpload">
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="Đăng ảnh lên kho ảnh">
+      <div class="grip"></div>
+      <div class="hd">
+        <div>
+          <div class="label">Kho ảnh chuyến đi</div>
+          <h2>Đăng khoảnh khắc</h2>
+        </div>
+        <button class="x" data-act="closePhotoUpload" aria-label="Đóng">×</button>
+      </div>
+      <div style="margin-top:12px;display:grid;gap:12px">
+        <div style="border-radius:14px;overflow:hidden;max-height:280px;background:var(--sunk);border:1px solid var(--line);text-align:center">
+          <img src="${esc(pu.previewUrl)}" style="max-width:100%;max-height:280px;object-fit:contain;display:block;margin:0 auto">
+        </div>
+        <div class="field">
+          <label class="label" for="photoNoteInput">Ghi chú khoảnh khắc (Caption)</label>
+          <textarea id="photoNoteInput" placeholder="Chia sẻ cảm nghĩ, địa điểm, khoảnh khắc đáng nhớ... (vd: Hoàng hôn rực rỡ ở bãi biển Mỹ Khê)...">${esc(pu.note)}</textarea>
+        </div>
+        <div class="row">
+          <button class="btn now" data-act="submitPhoto" ${busy?'disabled':''}>
+            ${busy ? '⏳ Đang tải lên Drive…' : '🚀 Tải lên Google Drive'}
+          </button>
+          <button class="btn" data-act="closePhotoUpload" ${busy?'disabled':''}>Hủy</button>
+        </div>
+        ${pu.msg ? `<div class="sub" style="color:var(--now)">${esc(pu.msg)}</div>` : ''}
+      </div>
+    </div>
+  </div>`;
 }
 
 function expFormView() {
@@ -928,23 +962,90 @@ function bind() {
   on('simAt', 'change', e => { const v = e.target.value; if (v) { S.simKey = toKey(v.slice(0,10), v.slice(11,16)); softRender(); } });
   on('itin', 'input', e => S.draft = e.target.value);
   on('file', 'change', e => S.files = [...e.target.files]);
+  on('photoNoteInput', 'input', e => { if (S.photoUpload) S.photoUpload.note = e.target.value; });
 
-  const uploadPhoto = async file => {
-    if (!file) return;
-    if (!S.name) { S.askName = true; render(); return; }
-    const note = prompt('Ghi chú khoảnh khắc cho bức ảnh (để trống nếu không cần):') || '';
-    toast('Đang tải ảnh lên Google Drive…');
-    try {
-      const b64 = await shrinkImage(file, 1600);
-      const res = await apiPost({ action: 'photo', id: S.tripId, author: S.name, note, image: { mime: 'image/jpeg', data: b64 } });
-      if (!S.photos) S.photos = [];
-      S.photos.unshift(res.photo);
-      toast('Đã lưu ảnh vào Drive!');
-      render();
-    } catch(e) { toast('Lỗi tải ảnh: ' + e.message); }
+  // Bắt sự kiện chọn ảnh cho Kho ảnh (Camera hoặc Thư viện)
+  on('albumCam', 'change', e => {
+    if (e.target.files && e.target.files[0]) {
+      startPhotoUpload(e.target.files[0]);
+      e.target.value = ''; // Reset để có thể chụp tiếp
+    }
+  });
+  on('albumPick', 'change', e => {
+    if (e.target.files && e.target.files[0]) {
+      startPhotoUpload(e.target.files[0]);
+      e.target.value = '';
+    }
+  });
+}
+
+function startPhotoUpload(file) {
+  if (!file) return;
+  if (!S.name) {
+    S.askName = true;
+    render();
+    return;
+  }
+  S.photoUpload = {
+    file: file,
+    previewUrl: URL.createObjectURL(file),
+    note: '',
+    state: 'idle',
+    msg: ''
   };
-  on('albumCam', 'change', e => uploadPhoto(e.target.files[0]));
-  on('albumPick', 'change', async e => { for (const f of e.target.files) await uploadPhoto(f); });
+  render();
+}
+
+async function submitPhoto() {
+  const pu = S.photoUpload;
+  if (!pu || !pu.file || pu.state === 'uploading') return;
+  pu.state = 'uploading';
+  pu.msg = 'Đang nén ảnh và tải lên Google Drive…';
+  render();
+
+  try {
+    const b64 = await shrinkImage(pu.file, 1600);
+    const author = S.name || 'Thành viên';
+    const note = (pu.note || '').trim();
+
+    if (IS_DEMO) {
+      const localPhoto = {
+        id: 'P_local_' + Date.now(),
+        author: author,
+        note: note,
+        url: 'data:image/jpeg;base64,' + b64,
+        when: wallParts(new Date(), tz()).date + ' ' + wallParts(new Date(), tz()).time
+      };
+      if (!S.photos) S.photos = [];
+      S.photos.unshift(localPhoto);
+      try {
+        let saved = JSON.parse(store.get('ht-demo-photos') || '[]');
+        saved.unshift(localPhoto);
+        store.set('ht-demo-photos', JSON.stringify(saved.slice(0, 30)));
+      } catch(e) {}
+    } else {
+      const res = await apiPost({
+        action: 'photo',
+        id: S.tripId,
+        author: author,
+        note: note,
+        image: { mime: 'image/jpeg', data: b64 }
+      });
+      if (res.photo) {
+        if (!S.photos) S.photos = [];
+        S.photos.unshift(res.photo);
+      }
+    }
+
+    if (pu.previewUrl) URL.revokeObjectURL(pu.previewUrl);
+    S.photoUpload = null;
+    toast('Đã lưu ảnh vào Google Drive và Album!');
+    render();
+  } catch(err) {
+    pu.state = 'error';
+    pu.msg = 'Lỗi tải ảnh: ' + (err.message || err);
+    render();
+  }
 }
 
 async function act(a) {
@@ -963,6 +1064,12 @@ async function act(a) {
     }
     case 'closeSheet': S.sheet = null; render(); break;
     case 'closeExp': S.expForm = null; render(); break;
+    case 'closePhotoUpload':
+      if (S.photoUpload && S.photoUpload.previewUrl) URL.revokeObjectURL(S.photoUpload.previewUrl);
+      S.photoUpload = null;
+      render();
+      break;
+    case 'submitPhoto': submitPhoto(); break;
     case 'realtime': S.simKey = null; softRender(); break;
     case 'nearai': loadNearby(true); break;
     case 'enrichTips': {
@@ -1006,7 +1113,6 @@ async function act(a) {
         if (res.trip) {
           S.trip = withIds(res.trip);
 
-          // Tự động chuyển tab sang đúng ngày của sự kiện mới
           if (res.targetDate) {
             const matchedDayIdx = S.trip.days.findIndex(d => d.date === res.targetDate);
             if (matchedDayIdx !== -1) {
@@ -1021,7 +1127,6 @@ async function act(a) {
         toast(res.explanation || 'Đã lưu ghi chú thành công!');
         render();
 
-        // Tự động cuộn đến Dòng thời gian để xem sự kiện vừa thêm
         if (isAI && res.trip) {
           setTimeout(() => {
             const tl = document.getElementById('timeline');
@@ -1119,6 +1224,9 @@ async function boot() {
       { id: 'n1', itemId: 'demo-item-1', itemTitle: 'Dạo chợ Hàn', author: 'Lan', text: 'Tầng 2 chợ Hàn mua quà nhớ trả giá chút nha', ts: Date.now() - 3600000 },
       { id: 'n2', itemId: 'chung', itemTitle: 'Cả chuyến', author: 'Minh', text: 'Mình mang theo 2 sạc dự phòng loại 20.000mAh nhé', ts: Date.now() - 7200000 }
     ];
+    try {
+      S.photos = JSON.parse(store.get('ht-demo-photos') || '[]');
+    } catch(e) { S.photos = []; }
     S.screen = 'live';
     render();
     initLocationAndContext();
@@ -1143,8 +1251,33 @@ async function initLocationAndContext() {
   loadNearby(false);
 }
 
+// Nhịp đồng hồ tối ưu: KHÔNG vẽ lại toàn bộ DOM, chỉ cập nhật trực tiếp số đếm ngược
+let lastSig = '';
+function tick() {
+  if (S.screen !== 'live' || !S.trip) return;
+  const sit = situation();
+  const n = fromKey(sit.n);
+
+  const cd = $('#cd');
+  if (cd && sit.next[0] && !sit.cur) {
+    cd.innerHTML = cdUnits(sit.next[0].s - sit.n);
+  }
+  const bar = $('#heroBar');
+  if (bar && sit.cur) {
+    bar.style.width = Math.min(100, Math.max(0, (sit.n - sit.cur.s) / (sit.cur.e - sit.cur.s) * 100)).toFixed(1) + '%';
+  }
+
+  const sig = (sit.cur && sit.cur.id) + '|' + (sit.next[0] && sit.next[0].id) + '|' + n.time;
+  if (sig !== lastSig) {
+    lastSig = sig;
+    if (!S.sheet && !S.askName && !S.expForm && !S.photoUpload && !typing()) {
+      softRender();
+    }
+  }
+}
+
 boot();
-setInterval(() => { if (S.screen === 'live') softRender(); }, 1000);
+setInterval(tick, 1000);
 setInterval(() => { if (S.screen === 'live') loadWeather(); }, 30 * 60000);
 })();
 </script>
