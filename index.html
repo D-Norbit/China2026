@@ -235,7 +235,7 @@ a { color:var(--sea); }
 /* =========================================================
    CẤU HÌNH: Dán Web App URL của Google Apps Script vào đây.
    ========================================================= */
-const API_URL = 'https://script.google.com/macros/s/AKfycbwDYMHWQl0lcHs1fWNeaJjUl9JeybuBhFrn0zPhRGLo0tYJghUv1Ylu4kYuTV_Q6g0M/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzqe9aHtuOtPQvfmbogB9YQzYOhCIBdvuUsef5JuW8VRYGwQhu02R_v3q4qnu9okH0_/exec';
 
 (function(){
 "use strict";
@@ -767,7 +767,7 @@ function notesPanel(sit) {
           ${sit.items.map(x=>`<option value="${esc(x.id)}">${fmtDate(x.date)} ${x.start} · ${esc(x.title)}</option>`).join('')}
         </select>
       </div>
-      <textarea id="noteText" placeholder="Nhập ghi chú hoặc nhắc nhở (vd: Sáng mai đi Bà Nà nhớ mang áo khoác, hoặc Tối 19h nhớ đặt bàn trước ở quán Bé Mặn)..."></textarea>
+      <textarea id="noteText" placeholder="Nhập ghi chú hoặc nhắc nhở (vd: Ngày 08/11 có kỷ niệm ngày cưới, hoặc Tối 19h nhớ đặt bàn trước ở quán Bé Mặn)..."></textarea>
       <div class="row">
         <button class="btn now" data-act="sendNoteAI">✨ Gửi & Sen gắn vào lịch trình</button>
         <button class="btn sm" data-act="sendNote">Chỉ lưu sổ ghi chú</button>
@@ -871,7 +871,18 @@ function albumPanel() {
 
 function tipsPanel(sit) {
   const tips = (S.trip && S.trip.tips) || [];
-  return `<section class="panel"><header><h3>Lưu ý chuyến đi</h3></header><ul class="notes">${tips.map(t => `<li class="ai">${esc(t.text||t)}</li>`).join('')||'<div class="empty">Không có lưu ý đặc biệt.</div>'}</ul></section>`;
+  return `<section class="panel" id="tips">
+    <header>
+      <h3>Lưu ý chuyến đi & Cẩm nang</h3>
+      <span class="sub">${tips.length} lưu ý thực chiến</span>
+    </header>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn now sm" data-act="enrichTips">✨ Nhờ Sen bổ sung thêm lưu ý</button>
+    </div>
+    <ul class="notes">
+      ${tips.map(t => `<li class="ai">${esc(t.text || t)}</li>`).join('') || '<div class="empty">Chưa có lưu ý nào. Bấm nút phía trên để Sen gợi ý cẩm nang nhé!</div>'}
+    </ul>
+  </section>`;
 }
 
 function expFormView() {
@@ -954,22 +965,72 @@ async function act(a) {
     case 'closeExp': S.expForm = null; render(); break;
     case 'realtime': S.simKey = null; softRender(); break;
     case 'nearai': loadNearby(true); break;
+    case 'enrichTips': {
+      toast('Sen đang tổng hợp cẩm nang và mẹo thực chiến cho chuyến đi…');
+      try {
+        const res = await apiPost({ action: 'enrichTips', id: S.tripId });
+        if (res.tips) {
+          S.trip.tips = res.tips;
+          toast('Sen đã cập nhật thêm các lưu ý hữu ích!');
+          render();
+        }
+      } catch(err) {
+        toast('Lỗi cập nhật lưu ý: ' + err.message);
+      }
+      break;
+    }
     case 'sendNoteAI':
     case 'sendNote': {
       const t = ($('#noteText').value || '').trim();
       if (!t) return;
       if (!S.name) { S.askName = true; render(); return; }
+
       const isAI = (a === 'sendNoteAI');
       const target = $('#noteFor') ? $('#noteFor').value : 'auto';
-      toast(isAI ? 'Sen AI đang phân tích ghi chú và đối chiếu lịch trình…' : 'Đang lưu ghi chú…');
+
+      toast(isAI ? 'Sen AI đang phân tích ghi chú và xếp vào dòng thời gian…' : 'Đang lưu ghi chú…');
+
       try {
-        const res = await apiPost({ action: 'note', id: S.tripId, itemId: target, itemTitle: 'Chung', author: S.name, text: t, aiAnalyze: isAI });
+        const res = await apiPost({
+          action: 'note',
+          id: S.tripId,
+          itemId: target,
+          itemTitle: 'Chung',
+          author: S.name,
+          text: t,
+          aiAnalyze: isAI
+        });
+
         if (res.note) S.notes.push(res.note);
-        if (res.trip) S.trip = withIds(res.trip);
-        const noteInput = $('#noteText'); if (noteInput) noteInput.value = '';
+
+        if (res.trip) {
+          S.trip = withIds(res.trip);
+
+          // Tự động chuyển tab sang đúng ngày của sự kiện mới
+          if (res.targetDate) {
+            const matchedDayIdx = S.trip.days.findIndex(d => d.date === res.targetDate);
+            if (matchedDayIdx !== -1) {
+              S.dayIdx = matchedDayIdx;
+            }
+          }
+        }
+
+        const noteInput = $('#noteText');
+        if (noteInput) noteInput.value = '';
+
         toast(res.explanation || 'Đã lưu ghi chú thành công!');
         render();
-      } catch(err) { toast('Lỗi: ' + err.message); }
+
+        // Tự động cuộn đến Dòng thời gian để xem sự kiện vừa thêm
+        if (isAI && res.trip) {
+          setTimeout(() => {
+            const tl = document.getElementById('timeline');
+            if (tl) tl.scrollIntoView({ behavior: 'smooth' });
+          }, 400);
+        }
+      } catch(err) {
+        toast('Lỗi: ' + err.message);
+      }
       break;
     }
     case 'addExp': S.expForm = { amount: '', currency: 'VND', note: '' }; render(); break;
